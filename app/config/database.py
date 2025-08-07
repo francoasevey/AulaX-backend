@@ -1,3 +1,4 @@
+# app/config/database.py
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
@@ -39,7 +40,7 @@ class IDatabaseManager(ABC):
         pass
 
 class MongoDBConnection(IDatabaseConnection):
-    """Implementación específica para MongoDB (Open/Closed Principle)"""
+    """Implementación mejorada para MongoDB con flexibilidad de conexión"""
     
     def __init__(self, database_config: DatabaseConfiguration):
         self._config = database_config
@@ -48,13 +49,21 @@ class MongoDBConnection(IDatabaseConnection):
         self._is_connected = False
     
     async def connect(self) -> None:
-        """Conectar a MongoDB con manejo de errores"""
+        """Conectar a MongoDB con configuración flexible"""
         try:
+            connection_url = self._config.connection_url
+            connection_options = self._config.get_connection_options()
+            
+            # Log del tipo de conexión
+            connection_type = settings.get_connection_type()
+            logger.info(f"🔗 Conectando a {connection_type}...")
+            logger.info(f"🔗 Host: {settings.MONGO_HOST}")
+            logger.info(f"🔗 Database: {self._config.database_name}")
+            
+            # Crear cliente con opciones optimizadas
             self._client = AsyncIOMotorClient(
-                self._config.connection_url,
-                maxPoolSize=50,
-                minPoolSize=10,
-                serverSelectionTimeoutMS=5000
+                connection_url,
+                **connection_options
             )
             
             self._database = self._client[self._config.database_name]
@@ -63,10 +72,16 @@ class MongoDBConnection(IDatabaseConnection):
             await self._client.admin.command('ping')
             self._is_connected = True
             
-            logger.info(f"✅ Conectado exitosamente a MongoDB: {self._config.database_name}")
+            logger.info(f"✅ Conectado exitosamente a {connection_type}")
+            logger.info(f"✅ Base de datos: {self._config.database_name}")
+            
+            # Log adicional para Atlas
+            if ".mongodb.net" in settings.MONGO_HOST:
+                logger.info(f"🌍 Conexión Atlas establecida con {settings.MONGO_HOST}")
             
         except Exception as e:
             logger.error(f"❌ Error conectando a MongoDB: {e}")
+            logger.error(f"❌ URL de conexión: {connection_url[:50]}...")  # Solo parte de la URL
             self._is_connected = False
             raise ConnectionError(f"No se pudo conectar a MongoDB: {e}")
     
@@ -75,7 +90,8 @@ class MongoDBConnection(IDatabaseConnection):
         if self._client:
             self._client.close()
             self._is_connected = False
-            logger.info("❌ Desconectado de MongoDB")
+            connection_type = settings.get_connection_type()
+            logger.info(f"❌ Desconectado de {connection_type}")
     
     def get_database(self) -> AsyncIOMotorDatabase:
         """Obtener instancia de base de datos"""
@@ -91,7 +107,8 @@ class MongoDBConnection(IDatabaseConnection):
             
             await self._client.admin.command('ping')
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ Health check falló: {e}")
             return False
     
     @property
@@ -100,54 +117,158 @@ class MongoDBConnection(IDatabaseConnection):
         return self._is_connected
 
 class MongoDBIndexManager(IDatabaseManager):
-    """Gestor de índices y colecciones de MongoDB (Single Responsibility)"""
+    """Gestor de índices mejorado para AULA X (Single Responsibility)"""
     
     def __init__(self, connection: IDatabaseConnection):
         self._connection = connection
     
     async def initialize_indexes(self) -> None:
-        """Crear índices necesarios para la aplicación"""
+        """Crear índices necesarios para AULA X"""
         try:
             db = self._connection.get_database()
             
-            # Índices para usuarios
-            await db.users.create_index("email", unique=True)
-            await db.users.create_index("username", unique=True)
-            await db.users.create_index([("role", 1), ("is_active", 1)])
+            logger.info("📝 Creando índices de AULA X...")
             
-            # Índices para contenidos académicos
-            await db.academic_plans.create_index([("teacher_id", 1), ("subject", 1)])
-            await db.academic_plans.create_index("date")
+            # === ÍNDICES PARA USUARIOS ===
+            await db.users.create_index("email", unique=True, name="idx_user_email")
+            await db.users.create_index([("role", 1), ("is_active", 1)], name="idx_user_role_status")
+            await db.users.create_index([("role", 1), ("status", 1)], name="idx_user_role_active")
             
-            # Índices para tareas
-            await db.tasks.create_index([("teacher_id", 1), ("subject", 1)])
-            await db.tasks.create_index([("student_id", 1), ("due_date", 1)])
-            await db.tasks.create_index("created_at")
+            # === ÍNDICES PARA MATERIAS ===
+            await db.subjects.create_index("code", unique=True, name="idx_subject_code")
+            await db.subjects.create_index("teacher_id", name="idx_subject_teacher")
+            await db.subjects.create_index([("academic_year", 1), ("semester", 1)], name="idx_subject_period")
+            await db.subjects.create_index("enrolled_students", name="idx_subject_students")
             
-            # Índices para notificaciones
-            await db.notifications.create_index([("user_id", 1), ("is_read", 1)])
-            await db.notifications.create_index("created_at")
+            # === ÍNDICES PARA TAREAS ===
+            await db.tasks.create_index("subject_id", name="idx_task_subject")
+            await db.tasks.create_index("teacher_id", name="idx_task_teacher")
+            await db.tasks.create_index("due_date", name="idx_task_due_date")
+            await db.tasks.create_index([("subject_id", 1), ("status", 1)], name="idx_task_subject_status")
             
-            logger.info("✅ Índices creados exitosamente")
+            # === ÍNDICES PARA ENTREGAS DE TAREAS ===
+            await db.task_submissions.create_index(
+                [("task_id", 1), ("student_id", 1)], 
+                unique=True, 
+                name="idx_submission_unique"
+            )
+            await db.task_submissions.create_index("student_id", name="idx_submission_student")
+            await db.task_submissions.create_index("submitted_at", name="idx_submission_date")
+            await db.task_submissions.create_index("status", name="idx_submission_status")
+            
+            # === ÍNDICES PARA EVALUACIONES ===
+            await db.task_evaluations.create_index("submission_id", unique=True, name="idx_evaluation_submission")
+            await db.task_evaluations.create_index("student_id", name="idx_evaluation_student")
+            await db.task_evaluations.create_index("status", name="idx_evaluation_status")
+            
+            # === ÍNDICES PARA CONTENIDOS ===
+            await db.contents.create_index("subject_id", name="idx_content_subject")
+            await db.contents.create_index("teacher_id", name="idx_content_teacher")
+            await db.contents.create_index("content_type", name="idx_content_type")
+            await db.contents.create_index([("subject_id", 1), ("status", 1)], name="idx_content_subject_status")
+            
+            # === ÍNDICES PARA PLANIFICACIÓN ===
+            await db.class_plans.create_index("subject_id", name="idx_class_subject")
+            await db.class_plans.create_index("teacher_id", name="idx_class_teacher")
+            await db.class_plans.create_index("scheduled_date", name="idx_class_date")
+            
+            # === ÍNDICES PARA NOTIFICACIONES ===
+            await db.notifications.create_index("recipient_id", name="idx_notification_recipient")
+            await db.notifications.create_index([("recipient_id", 1), ("is_read", 1)], name="idx_notification_unread")
+            await db.notifications.create_index("created_at", name="idx_notification_date")
+            
+            # Crear TTL para notificaciones expiradas
+            await db.notifications.create_index(
+                "expires_at",
+                expireAfterSeconds=0,
+                name="ttl_notification_expiry",
+                partialFilterExpression={"expires_at": {"$exists": True}}
+            )
+            
+            # === ÍNDICES PARA CHAT ===
+            await db.chat_messages.create_index("subject_id", name="idx_chat_subject")
+            await db.chat_messages.create_index([("subject_id", 1), ("created_at", 1)], name="idx_chat_timeline")
+            await db.chat_messages.create_index("sender_id", name="idx_chat_sender")
+            
+            # === ÍNDICES PARA CALENDARIO ===
+            await db.academic_calendar.create_index("start_date", name="idx_calendar_start")
+            await db.academic_calendar.create_index([("subject_id", 1), ("start_date", 1)], name="idx_calendar_subject")
+            
+            # === ÍNDICES PARA RELACIONES PADRE-ESTUDIANTE ===
+            await db.parent_students.create_index(
+                [("parent_id", 1), ("student_id", 1)], 
+                unique=True, 
+                name="idx_parent_student_unique"
+            )
+            await db.parent_students.create_index("student_id", name="idx_parent_student")
+            
+            # === ÍNDICES DE BÚSQUEDA DE TEXTO ===
+            await db.contents.create_index([
+                ("title", "text"),
+                ("description", "text"),
+                ("tags", "text")
+            ], name="idx_content_search")
+            
+            await db.subjects.create_index([
+                ("name", "text"),
+                ("description", "text"),
+                ("code", "text")
+            ], name="idx_subject_search")
+            
+            await db.users.create_index([
+                ("profile.first_name", "text"),
+                ("profile.last_name", "text"),
+                ("email", "text")
+            ], name="idx_user_search")
+            
+            logger.info("✅ Índices de AULA X creados exitosamente")
             
         except Exception as e:
             logger.error(f"❌ Error creando índices: {e}")
             raise e
     
     async def create_collections(self) -> None:
-        """Crear colecciones con validación de schema"""
+        """Crear colecciones con validación de schema para AULA X"""
         try:
             db = self._connection.get_database()
+            
+            logger.info("📦 Creando colecciones de AULA X...")
             
             # Definir schemas de validación
             user_schema = {
                 "$jsonSchema": {
                     "bsonType": "object",
-                    "required": ["email", "username", "password_hash", "role"],
+                    "required": ["email", "password_hash", "role"],
                     "properties": {
-                        "email": {"bsonType": "string"},
-                        "username": {"bsonType": "string"},
-                        "role": {"enum": ["administrator", "teacher", "student", "parent"]}
+                        "email": {"bsonType": "string", "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"},
+                        "role": {"enum": ["administrator", "teacher", "student", "parent"]},
+                        "status": {"enum": ["active", "inactive", "pending", "suspended"]},
+                        "password_hash": {"bsonType": "string", "minLength": 8}
+                    }
+                }
+            }
+            
+            subject_schema = {
+                "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": ["name", "code", "teacher_id", "academic_year", "semester"],
+                    "properties": {
+                        "code": {"bsonType": "string", "pattern": "^[A-Z0-9\\-_]+$"},
+                        "academic_year": {"bsonType": "int", "minimum": 2020, "maximum": 2030},
+                        "semester": {"bsonType": "int", "minimum": 1, "maximum": 2},
+                        "max_students": {"bsonType": "int", "minimum": 1, "maximum": 100}
+                    }
+                }
+            }
+            
+            task_schema = {
+                "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": ["title", "subject_id", "teacher_id", "due_date"],
+                    "properties": {
+                        "status": {"enum": ["draft", "published", "closed", "archived"]},
+                        "task_type": {"enum": ["assignment", "essay", "exam", "project", "quiz"]},
+                        "max_points": {"bsonType": "number", "minimum": 0, "maximum": 100}
                     }
                 }
             }
@@ -155,31 +276,42 @@ class MongoDBIndexManager(IDatabaseManager):
             # Crear colecciones con validación
             collections_config = {
                 "users": user_schema,
-                "academic_plans": {},
-                "tasks": {},
+                "subjects": subject_schema,
+                "tasks": task_schema,
+                "task_submissions": {},
+                "task_evaluations": {},
+                "contents": {},
+                "class_plans": {},
                 "notifications": {},
-                "chat_messages": {}
+                "chat_messages": {},
+                "academic_calendar": {},
+                "parent_students": {},
+                "content_categories": {}
             }
             
+            existing_collections = await db.list_collection_names()
+            
             for collection_name, schema in collections_config.items():
-                if collection_name not in await db.list_collection_names():
+                if collection_name not in existing_collections:
                     if schema:
                         await db.create_collection(collection_name, validator=schema)
+                        logger.info(f"✅ Colección '{collection_name}' creada con validación")
                     else:
                         await db.create_collection(collection_name)
-                    
-                    logger.info(f"✅ Colección '{collection_name}' creada")
+                        logger.info(f"✅ Colección '{collection_name}' creada")
+                else:
+                    logger.info(f"📦 Colección '{collection_name}' ya existe")
             
         except Exception as e:
             logger.error(f"❌ Error creando colecciones: {e}")
             raise e
 
 class DatabaseFactory:
-    """Factory para crear instancias de base de datos (Factory Pattern)"""
+    """Factory mejorado para crear instancias de base de datos (Factory Pattern)"""
     
     @staticmethod
     def create_mongodb_connection() -> IDatabaseConnection:
-        """Crear conexión MongoDB"""
+        """Crear conexión MongoDB con configuración flexible"""
         db_config = settings.get_database_config()
         return MongoDBConnection(db_config)
     
@@ -189,7 +321,7 @@ class DatabaseFactory:
         return MongoDBIndexManager(connection)
 
 class DatabaseService:
-    """Servicio principal de base de datos (Facade Pattern)"""
+    """Servicio principal de base de datos mejorado (Facade Pattern)"""
     
     def __init__(self):
         self._connection: Optional[IDatabaseConnection] = None
@@ -197,12 +329,54 @@ class DatabaseService:
     
     async def initialize(self) -> None:
         """Inicializar servicio de base de datos"""
+        logger.info("🚀 Inicializando servicio de base de datos...")
+        
         self._connection = DatabaseFactory.create_mongodb_connection()
         self._manager = DatabaseFactory.create_database_manager(self._connection)
         
         await self._connection.connect()
         await self._manager.create_collections()
         await self._manager.initialize_indexes()
+        
+        # Crear datos iniciales si es necesario
+        await self._create_initial_data()
+        
+        logger.info("🎉 Servicio de base de datos inicializado correctamente")
+    
+    async def _create_initial_data(self) -> None:
+        """Crear datos iniciales si no existen"""
+        try:
+            db = self.get_database()
+            
+            # Verificar si ya existe un administrador
+            admin_count = await db.users.count_documents({"role": "administrator"})
+            
+            if admin_count == 0:
+                logger.info("👤 Creando usuario administrador inicial...")
+                
+                admin_user = {
+                    "email": "admin@aulax.com",
+                    "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPu8VDjL8QOrS",  # admin123
+                    "role": "administrator",
+                    "status": "active",
+                    "profile": {
+                        "first_name": "Administrador",
+                        "last_name": "Sistema",
+                        "phone": None,
+                        "avatar_url": None,
+                        "bio": "Usuario administrador del sistema"
+                    },
+                    "email_verified": True,
+                    "created_at": {"$date": "2024-01-01T00:00:00.000Z"},
+                    "updated_at": {"$date": "2024-01-01T00:00:00.000Z"},
+                    "is_active": True
+                }
+                
+                await db.users.insert_one(admin_user)
+                logger.info("✅ Usuario administrador creado: admin@aulax.com / admin123")
+        
+        except Exception as e:
+            logger.error(f"❌ Error creando datos iniciales: {e}")
     
     async def shutdown(self) -> None:
         """Cerrar servicio de base de datos"""
@@ -216,16 +390,74 @@ class DatabaseService:
         return self._connection.get_database()
     
     async def health_check(self) -> Dict[str, Any]:
-        """Verificar salud del servicio"""
+        """Verificar salud del servicio con información detallada"""
         if not self._connection:
-            return {"status": "disconnected", "healthy": False}
+            return {
+                "status": "disconnected", 
+                "healthy": False,
+                "connection_type": "none",
+                "database": None
+            }
         
         is_healthy = await self._connection.health_check()
+        
+        # Obtener estadísticas de la base de datos
+        stats = {}
+        try:
+            if is_healthy:
+                db = self.get_database()
+                db_stats = await db.command("dbStats")
+                collection_names = await db.list_collection_names()
+                
+                stats = {
+                    "collections": len(collection_names),
+                    "collection_names": collection_names,
+                    "data_size": db_stats.get("dataSize", 0),
+                    "storage_size": db_stats.get("storageSize", 0),
+                    "indexes": db_stats.get("indexes", 0)
+                }
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudieron obtener estadísticas de BD: {e}")
+        
         return {
             "status": "connected" if is_healthy else "error",
             "healthy": is_healthy,
-            "database": settings.get_database_config().database_name
+            "connection_type": settings.get_connection_type(),
+            "database": settings.get_database_config().database_name,
+            "host": settings.MONGO_HOST,
+            "stats": stats
         }
+    
+    async def switch_connection(self, new_settings_type: str = "current") -> bool:
+        """
+        Cambiar tipo de conexión dinámicamente
+        
+        Args:
+            new_settings_type: "atlas", "local", "docker", o "current"
+        
+        Returns:
+            bool: True si el cambio fue exitoso
+        """
+        try:
+            # Cerrar conexión actual
+            if self._connection:
+                await self._connection.disconnect()
+            
+            # Recargar configuración
+            if new_settings_type != "current":
+                from app.config.settings import GlobalSettings
+                global_settings = GlobalSettings()
+                global_settings.reload_settings()
+            
+            # Reinicializar con nueva configuración
+            await self.initialize()
+            
+            logger.info(f"✅ Conexión cambiada exitosamente a: {settings.get_connection_type()}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error cambiando conexión: {e}")
+            return False
 
 # Singleton para el servicio de base de datos
 class GlobalDatabaseService:
@@ -244,6 +476,11 @@ class GlobalDatabaseService:
         if self._service is None:
             self._service = DatabaseService()
         return self._service
+    
+    def reset_service(self) -> DatabaseService:
+        """Resetear servicio (útil para cambios de configuración)"""
+        self._service = DatabaseService()
+        return self._service
 
 # Instancia global
 database_service = GlobalDatabaseService().get_service()
@@ -252,3 +489,48 @@ database_service = GlobalDatabaseService().get_service()
 async def get_database() -> AsyncIOMotorDatabase:
     """Función helper para obtener base de datos (Dependency Injection)"""
     return database_service.get_database()
+
+# Funciones adicionales para flexibilidad de conexión
+async def switch_to_atlas(cluster_url: str, username: str, password: str, database: str = "aula_x"):
+    """Cambiar a conexión Atlas"""
+    import os
+    os.environ['MONGO_HOST'] = cluster_url
+    os.environ['MONGO_USERNAME'] = username  
+    os.environ['MONGO_PASSWORD'] = password
+    os.environ['MONGO_DATABASE'] = database
+    
+    global database_service
+    database_service = GlobalDatabaseService().reset_service()
+    return await database_service.switch_connection("atlas")
+
+async def switch_to_local(host: str = "localhost", port: int = 27017, database: str = "aula_x"):
+    """Cambiar a conexión local"""
+    import os
+    os.environ['MONGO_HOST'] = host
+    os.environ['MONGO_PORT'] = str(port)
+    os.environ['MONGO_DATABASE'] = database
+    os.environ.pop('MONGO_USERNAME', None)  # Remover auth para local
+    os.environ.pop('MONGO_PASSWORD', None)
+    
+    global database_service
+    database_service = GlobalDatabaseService().reset_service()
+    return await database_service.switch_connection("local")
+
+async def switch_to_docker(
+    host: str = "localhost", 
+    port: int = 27017,
+    username: str = "admin", 
+    password: str = "admin123",
+    database: str = "aula_x"
+):
+    """Cambiar a conexión Docker"""
+    import os
+    os.environ['MONGO_HOST'] = host
+    os.environ['MONGO_PORT'] = str(port)
+    os.environ['MONGO_USERNAME'] = username
+    os.environ['MONGO_PASSWORD'] = password
+    os.environ['MONGO_DATABASE'] = database
+    
+    global database_service
+    database_service = GlobalDatabaseService().reset_service()
+    return await database_service.switch_connection("docker")
