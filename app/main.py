@@ -1,4 +1,4 @@
-# app/main.py
+# app/main.py - Archivo Principal Corregido
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -226,40 +226,46 @@ class FastAPIFactory:
         @app.get("/info")
         async def application_info() -> Dict[str, Any]:
             """Información detallada de la aplicación"""
-            return {
-                "name": settings.PROJECT_NAME,
-                "version": settings.VERSION,
-                "environment": settings.ENVIRONMENT,
-                "debug": settings.DEBUG,
-                "database": {
-                    "type": "MongoDB",
-                    "connection_type": settings.get_connection_type(),
-                    "name": settings.get_database_config().database_name,
-                    "host": settings.MONGO_HOST
-                },
-                "security": {
-                    "algorithm": settings.get_security_config().algorithm,
-                    "token_expire_minutes": settings.get_security_config().token_expire_minutes
-                },
-                "ai": {
-                    "configured": settings.get_ai_config().is_configured(),
-                    "model": settings.get_ai_config().model
-                },
-                "technologies": [
-                    "FastAPI", "MongoDB", "Motor", "Pydantic", 
-                    "OpenAI", "AWS S3", "JWT", "BCrypt", "Vue.js", "TailwindCSS"
-                ],
-                "modules": [
-                    "Authentication & Authorization",
-                    "Academic Planning",
-                    "Task Management & AI Evaluation", 
-                    "Content Management",
-                    "Real-time Communication",
-                    "Intelligent Notifications",
-                    "Parent Portal",
-                    "Analytics Dashboard"
-                ]
-            }
+            try:
+                return {
+                    "name": settings.PROJECT_NAME,
+                    "version": settings.VERSION,
+                    "environment": settings.ENVIRONMENT,
+                    "debug": settings.DEBUG,
+                    "database": {
+                        "type": "MongoDB",
+                        "connection_type": settings.get_connection_type(),
+                        "name": settings.get_database_config().database_name,
+                        "host": settings.MONGO_HOST,
+                        "port": settings.MONGO_PORT
+                    },
+                    "security": {
+                        "algorithm": settings.get_security_config().algorithm,
+                        "token_expire_minutes": settings.get_security_config().token_expire_minutes,
+                        "secure_key": settings.get_security_config().is_secure_key()
+                    },
+                    "ai": {
+                        "configured": settings.get_ai_config().is_configured(),
+                        "model": settings.get_ai_config().model if settings.get_ai_config().is_configured() else None
+                    },
+                    "technologies": [
+                        "FastAPI", "MongoDB", "Motor", "Pydantic", 
+                        "OpenAI", "AWS S3", "JWT", "BCrypt", "Vue.js", "TailwindCSS"
+                    ],
+                    "modules": [
+                        "Authentication & Authorization",
+                        "Academic Planning",
+                        "Task Management & AI Evaluation", 
+                        "Content Management",
+                        "Real-time Communication",
+                        "Intelligent Notifications",
+                        "Parent Portal",
+                        "Analytics Dashboard"
+                    ]
+                }
+            except Exception as e:
+                logger.error(f"Error obteniendo información de la aplicación: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
         
         # === ENDPOINTS DE GESTIÓN DE BASE DE DATOS ===
         
@@ -367,26 +373,30 @@ class FastAPIFactory:
         @app.get("/config/current")
         async def get_current_config() -> Dict[str, Any]:
             """Obtener configuración actual"""
-            return {
-                "environment": settings.ENVIRONMENT,
-                "debug": settings.DEBUG,
-                "database": {
-                    "type": settings.get_connection_type(),
-                    "host": settings.MONGO_HOST,
-                    "port": settings.MONGO_PORT,
-                    "database": settings.MONGO_DATABASE,
-                    "has_auth": bool(settings.MONGO_USERNAME)
-                },
-                "ai": {
-                    "configured": settings.get_ai_config().is_configured(),
-                    "model": settings.get_ai_config().model
-                },
-                "security": {
-                    "algorithm": settings.get_security_config().algorithm,
-                    "token_expire_minutes": settings.get_security_config().token_expire_minutes,
-                    "secure_key": settings.get_security_config().is_secure_key()
+            try:
+                return {
+                    "environment": settings.ENVIRONMENT,
+                    "debug": settings.DEBUG,
+                    "database": {
+                        "type": settings.get_connection_type(),
+                        "host": settings.MONGO_HOST,
+                        "port": settings.MONGO_PORT,
+                        "database": settings.MONGO_DATABASE,
+                        "has_auth": bool(settings.MONGO_USERNAME)
+                    },
+                    "ai": {
+                        "configured": settings.get_ai_config().is_configured(),
+                        "model": settings.get_ai_config().model if settings.get_ai_config().is_configured() else None
+                    },
+                    "security": {
+                        "algorithm": settings.get_security_config().algorithm,
+                        "token_expire_minutes": settings.get_security_config().token_expire_minutes,
+                        "secure_key": settings.get_security_config().is_secure_key()
+                    }
                 }
-            }
+            except Exception as e:
+                logger.error(f"Error obteniendo configuración actual: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
         
         @app.get("/config/connection-examples")
         async def get_connection_examples() -> Dict[str, Any]:
@@ -395,30 +405,24 @@ class FastAPIFactory:
                 "atlas": {
                     "description": "MongoDB Atlas (Cloud)",
                     "env_variables": {
-                        "MONGO_HOST": "cluster0.xxxxx.mongodb.net",
-                        "MONGO_USERNAME": "tu_usuario",
-                        "MONGO_PASSWORD": "tu_password",
-                        "MONGO_DATABASE": "aula_x"
+                        "MONGODB_URL": "mongodb+srv://usuario:password@cluster.mongodb.net",
+                        "DATABASE_NAME": "aula_x"
                     },
                     "example_call": "POST /database/switch-to-atlas"
                 },
                 "local": {
                     "description": "MongoDB Local (sin autenticación)",
                     "env_variables": {
-                        "MONGO_HOST": "localhost",
-                        "MONGO_PORT": "27017",
-                        "MONGO_DATABASE": "aula_x"
+                        "MONGODB_URL": "mongodb://localhost:27017",
+                        "DATABASE_NAME": "aula_x"
                     },
                     "example_call": "POST /database/switch-to-local"
                 },
                 "docker": {
                     "description": "MongoDB en Docker",
                     "env_variables": {
-                        "MONGO_HOST": "localhost",
-                        "MONGO_PORT": "27017",
-                        "MONGO_USERNAME": "admin",
-                        "MONGO_PASSWORD": "admin123",
-                        "MONGO_DATABASE": "aula_x"
+                        "MONGODB_URL": "mongodb://admin:admin123@localhost:27017",
+                        "DATABASE_NAME": "aula_x"
                     },
                     "example_call": "POST /database/switch-to-docker"
                 }

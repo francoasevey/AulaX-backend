@@ -1,4 +1,4 @@
-# app/config/database.py
+# app/config/database.py - Base de Datos Corregida
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
@@ -40,7 +40,7 @@ class IDatabaseManager(ABC):
         pass
 
 class MongoDBConnection(IDatabaseConnection):
-    """Implementación mejorada para MongoDB con flexibilidad de conexión"""
+    """Implementación para MongoDB con flexibilidad de conexión"""
     
     def __init__(self, database_config: DatabaseConfiguration):
         self._config = database_config
@@ -53,7 +53,7 @@ class MongoDBConnection(IDatabaseConnection):
         try:
             connection_url = self._config.connection_url
             
-            # 🔧 ARREGLADO: Opciones de conexión definidas aquí
+            # Opciones de conexión optimizadas
             connection_options = {
                 "maxPoolSize": 50,
                 "minPoolSize": 5,
@@ -72,8 +72,9 @@ class MongoDBConnection(IDatabaseConnection):
             # Log del tipo de conexión
             connection_type = settings.get_connection_type()
             logger.info(f"🔗 Conectando a {connection_type}...")
-            logger.info(f"🔗 Connection URL: {connection_url[:30]}...")  # 🔧 ARREGLADO
-            logger.info(f"🔗 Database: {self._config.database_name}")
+            logger.info(f"🔗 Host: {self._config.host}")
+            logger.info(f"🔗 Puerto: {self._config.port}")
+            logger.info(f"🔗 Base de datos: {self._config.database_name}")
             
             # Crear cliente con opciones optimizadas
             self._client = AsyncIOMotorClient(
@@ -91,12 +92,13 @@ class MongoDBConnection(IDatabaseConnection):
             logger.info(f"✅ Base de datos: {self._config.database_name}")
             
             # Log adicional para Atlas
-            if ".mongodb.net" in connection_url:  # 🔧 ARREGLADO
-                logger.info(f"🌍 Conexión Atlas establecida")  # 🔧 ARREGLADO
+            if "mongodb+srv://" in connection_url:
+                logger.info(f"🌍 Conexión Atlas establecida exitosamente")
             
         except Exception as e:
             logger.error(f"❌ Error conectando a MongoDB: {e}")
-            logger.error(f"❌ URL de conexión: {connection_url[:50]}...")  # Solo parte de la URL
+            logger.error(f"❌ Host: {self._config.host}")
+            logger.error(f"❌ Puerto: {self._config.port}")
             self._is_connected = False
             raise ConnectionError(f"No se pudo conectar a MongoDB: {e}")
     
@@ -132,7 +134,7 @@ class MongoDBConnection(IDatabaseConnection):
         return self._is_connected
 
 class MongoDBIndexManager(IDatabaseManager):
-    """Gestor de índices mejorado para AULA X (Single Responsibility)"""
+    """Gestor de índices para AULA X (Single Responsibility)"""
     
     def __init__(self, connection: IDatabaseConnection):
         self._connection = connection
@@ -322,7 +324,7 @@ class MongoDBIndexManager(IDatabaseManager):
             raise e
 
 class DatabaseFactory:
-    """Factory mejorado para crear instancias de base de datos (Factory Pattern)"""
+    """Factory para crear instancias de base de datos (Factory Pattern)"""
     
     @staticmethod
     def create_mongodb_connection() -> IDatabaseConnection:
@@ -336,7 +338,7 @@ class DatabaseFactory:
         return MongoDBIndexManager(connection)
 
 class DatabaseService:
-    """Servicio principal de base de datos mejorado (Facade Pattern)"""
+    """Servicio principal de base de datos (Facade Pattern)"""
     
     def __init__(self):
         self._connection: Optional[IDatabaseConnection] = None
@@ -434,48 +436,86 @@ class DatabaseService:
         except Exception as e:
             logger.warning(f"⚠️ No se pudieron obtener estadísticas de BD: {e}")
         
-        # 🔧 ARREGLADO: Extraer host de la URL de conexión
-        connection_url = settings.get_database_config().connection_url
-        host = connection_url.split('@')[-1].split('/')[0] if '@' in connection_url else connection_url.split('//')[1].split('/')[0]
-        
         return {
             "status": "connected" if is_healthy else "error",
             "healthy": is_healthy,
             "connection_type": settings.get_connection_type(),
             "database": settings.get_database_config().database_name,
-            "host": host,
+            "host": settings.MONGO_HOST,
+            "port": settings.MONGO_PORT,
             "stats": stats
         }
     
-    async def switch_connection(self, new_settings_type: str = "current") -> bool:
-        """
-        Cambiar tipo de conexión dinámicamente
-        
-        Args:
-            new_settings_type: "atlas", "local", "docker", o "current"
-        
-        Returns:
-            bool: True si el cambio fue exitoso
-        """
+    # Métodos para cambio dinámico de conexión
+    async def switch_to_atlas(self, cluster_url: str, username: str, password: str, database: str = "aula_x") -> bool:
+        """Cambiar a conexión Atlas"""
         try:
             # Cerrar conexión actual
             if self._connection:
                 await self._connection.disconnect()
             
-            # Recargar configuración
-            if new_settings_type != "current":
-                from app.config.settings import GlobalSettings
-                global_settings = GlobalSettings()
-                global_settings.reload_settings()
+            # Actualizar configuración
+            new_url = f"mongodb+srv://{username}:{password}@{cluster_url}"
+            new_config = DatabaseConfiguration(new_url, database)
             
-            # Reinicializar con nueva configuración
-            await self.initialize()
+            # Crear nueva conexión
+            self._connection = MongoDBConnection(new_config)
+            self._manager = DatabaseFactory.create_database_manager(self._connection)
             
-            logger.info(f"✅ Conexión cambiada exitosamente a: {settings.get_connection_type()}")
+            # Conectar y verificar
+            await self._connection.connect()
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error cambiando conexión: {e}")
+            logger.error(f"❌ Error cambiando a Atlas: {e}")
+            return False
+    
+    async def switch_to_local(self, host: str = "localhost", port: int = 27017, database: str = "aula_x") -> bool:
+        """Cambiar a conexión local"""
+        try:
+            # Cerrar conexión actual
+            if self._connection:
+                await self._connection.disconnect()
+            
+            # Actualizar configuración
+            new_url = f"mongodb://{host}:{port}"
+            new_config = DatabaseConfiguration(new_url, database)
+            
+            # Crear nueva conexión
+            self._connection = MongoDBConnection(new_config)
+            self._manager = DatabaseFactory.create_database_manager(self._connection)
+            
+            # Conectar y verificar
+            await self._connection.connect()
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error cambiando a local: {e}")
+            return False
+    
+    async def switch_to_docker(self, host: str = "localhost", port: int = 27017, 
+                             username: str = "admin", password: str = "admin123", 
+                             database: str = "aula_x") -> bool:
+        """Cambiar a conexión Docker"""
+        try:
+            # Cerrar conexión actual
+            if self._connection:
+                await self._connection.disconnect()
+            
+            # Actualizar configuración
+            new_url = f"mongodb://{username}:{password}@{host}:{port}"
+            new_config = DatabaseConfiguration(new_url, database)
+            
+            # Crear nueva conexión
+            self._connection = MongoDBConnection(new_config)
+            self._manager = DatabaseFactory.create_database_manager(self._connection)
+            
+            # Conectar y verificar
+            await self._connection.connect()
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error cambiando a Docker: {e}")
             return False
 
 # Singleton para el servicio de base de datos
@@ -508,40 +548,3 @@ database_service = GlobalDatabaseService().get_service()
 async def get_database() -> AsyncIOMotorDatabase:
     """Función helper para obtener base de datos (Dependency Injection)"""
     return database_service.get_database()
-
-# Funciones adicionales para flexibilidad de conexión
-async def switch_to_atlas(cluster_url: str, username: str, password: str, database: str = "aula_x"):
-    """Cambiar a conexión Atlas"""
-    import os
-    os.environ['MONGODB_URL'] = f"mongodb+srv://{username}:{password}@{cluster_url}"
-    os.environ['DATABASE_NAME'] = database
-    
-    global database_service
-    database_service = GlobalDatabaseService().reset_service()
-    return await database_service.switch_connection("atlas")
-
-async def switch_to_local(host: str = "localhost", port: int = 27017, database: str = "aula_x"):
-    """Cambiar a conexión local"""
-    import os
-    os.environ['MONGODB_URL'] = f"mongodb://{host}:{port}"
-    os.environ['DATABASE_NAME'] = database
-    
-    global database_service
-    database_service = GlobalDatabaseService().reset_service()
-    return await database_service.switch_connection("local")
-
-async def switch_to_docker(
-    host: str = "localhost", 
-    port: int = 27017,
-    username: str = "admin", 
-    password: str = "admin123",
-    database: str = "aula_x"
-):
-    """Cambiar a conexión Docker"""
-    import os
-    os.environ['MONGODB_URL'] = f"mongodb://{username}:{password}@{host}:{port}"
-    os.environ['DATABASE_NAME'] = database
-    
-    global database_service
-    database_service = GlobalDatabaseService().reset_service()
-    return await database_service.switch_connection("docker")
