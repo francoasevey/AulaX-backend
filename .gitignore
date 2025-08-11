@@ -1,19 +1,102 @@
+# .gitignore para AULA X
+# ======================
+
+# === ENTORNOS VIRTUALES ===
+.venv/
+venv/
+.env/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# === VARIABLES DE ENTORNO (IMPORTANTE) ===
+.env
+.env.local
+.env.atlas
+.env.docker
+.env.production
+
+# === PYTHON ===
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-.env
-.venv
-venv/
-ENV/
-env/
-.DS_Store
-*.log
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# === TESTING ===
 .pytest_cache/
 htmlcov/
 .coverage
 *.cover
 .hypothesis/
+.tox/
+nosetests.xml
+coverage.xml
+
+# === LOGS ===
+*.log
+logs/
+log/
+
+# === EDITORES ===
 .idea/
 .vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# === SISTEMA ===
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# === ARCHIVOS TEMPORALES PIP (Tu problema específico) ===
+=*
+=2.0.0
+=3.3.2
+=4.5
+pip-log.txt
+
+# === BASE DE DATOS ===
+*.db
+*.sqlite3
+
+# === UPLOADS Y ARCHIVOS GRANDES ===
+uploads/
+media/
+static/media/
+*.pdf
+*.mp4
+*.avi
+
+# === DOCKER ===
+.dockerignore
+
+# === JUPYTER ===
+.ipynb_checkpoints
+
+# === CERTIFICADOS Y KEYS ===
+*.pem
+*.key
+*.crt
+secrets.py
+credentials.json
