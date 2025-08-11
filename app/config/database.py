@@ -52,12 +52,27 @@ class MongoDBConnection(IDatabaseConnection):
         """Conectar a MongoDB con configuración flexible"""
         try:
             connection_url = self._config.connection_url
-            connection_options = self._config.get_connection_options()
+            
+            # 🔧 ARREGLADO: Opciones de conexión definidas aquí
+            connection_options = {
+                "maxPoolSize": 50,
+                "minPoolSize": 5,
+                "serverSelectionTimeoutMS": 5000,
+                "socketTimeoutMS": 45000,
+                "connectTimeoutMS": 10000,
+            }
+            
+            # Si es Atlas, agregar opciones específicas
+            if "mongodb+srv://" in connection_url:
+                connection_options.update({
+                    "retryWrites": True,
+                    "w": "majority"
+                })
             
             # Log del tipo de conexión
             connection_type = settings.get_connection_type()
             logger.info(f"🔗 Conectando a {connection_type}...")
-            logger.info(f"🔗 Host: {settings.MONGO_HOST}")
+            logger.info(f"🔗 Connection URL: {connection_url[:30]}...")  # 🔧 ARREGLADO
             logger.info(f"🔗 Database: {self._config.database_name}")
             
             # Crear cliente con opciones optimizadas
@@ -76,8 +91,8 @@ class MongoDBConnection(IDatabaseConnection):
             logger.info(f"✅ Base de datos: {self._config.database_name}")
             
             # Log adicional para Atlas
-            if ".mongodb.net" in settings.MONGO_HOST:
-                logger.info(f"🌍 Conexión Atlas establecida con {settings.MONGO_HOST}")
+            if ".mongodb.net" in connection_url:  # 🔧 ARREGLADO
+                logger.info(f"🌍 Conexión Atlas establecida")  # 🔧 ARREGLADO
             
         except Exception as e:
             logger.error(f"❌ Error conectando a MongoDB: {e}")
@@ -95,7 +110,7 @@ class MongoDBConnection(IDatabaseConnection):
     
     def get_database(self) -> AsyncIOMotorDatabase:
         """Obtener instancia de base de datos"""
-        if not self._is_connected or not self._database:
+        if not self._is_connected or self._database is None:
             raise RuntimeError("Base de datos no inicializada. Ejecutar connect() primero.")
         return self._database
     
@@ -419,12 +434,16 @@ class DatabaseService:
         except Exception as e:
             logger.warning(f"⚠️ No se pudieron obtener estadísticas de BD: {e}")
         
+        # 🔧 ARREGLADO: Extraer host de la URL de conexión
+        connection_url = settings.get_database_config().connection_url
+        host = connection_url.split('@')[-1].split('/')[0] if '@' in connection_url else connection_url.split('//')[1].split('/')[0]
+        
         return {
             "status": "connected" if is_healthy else "error",
             "healthy": is_healthy,
             "connection_type": settings.get_connection_type(),
             "database": settings.get_database_config().database_name,
-            "host": settings.MONGO_HOST,
+            "host": host,
             "stats": stats
         }
     
@@ -494,10 +513,8 @@ async def get_database() -> AsyncIOMotorDatabase:
 async def switch_to_atlas(cluster_url: str, username: str, password: str, database: str = "aula_x"):
     """Cambiar a conexión Atlas"""
     import os
-    os.environ['MONGO_HOST'] = cluster_url
-    os.environ['MONGO_USERNAME'] = username  
-    os.environ['MONGO_PASSWORD'] = password
-    os.environ['MONGO_DATABASE'] = database
+    os.environ['MONGODB_URL'] = f"mongodb+srv://{username}:{password}@{cluster_url}"
+    os.environ['DATABASE_NAME'] = database
     
     global database_service
     database_service = GlobalDatabaseService().reset_service()
@@ -506,11 +523,8 @@ async def switch_to_atlas(cluster_url: str, username: str, password: str, databa
 async def switch_to_local(host: str = "localhost", port: int = 27017, database: str = "aula_x"):
     """Cambiar a conexión local"""
     import os
-    os.environ['MONGO_HOST'] = host
-    os.environ['MONGO_PORT'] = str(port)
-    os.environ['MONGO_DATABASE'] = database
-    os.environ.pop('MONGO_USERNAME', None)  # Remover auth para local
-    os.environ.pop('MONGO_PASSWORD', None)
+    os.environ['MONGODB_URL'] = f"mongodb://{host}:{port}"
+    os.environ['DATABASE_NAME'] = database
     
     global database_service
     database_service = GlobalDatabaseService().reset_service()
@@ -525,11 +539,8 @@ async def switch_to_docker(
 ):
     """Cambiar a conexión Docker"""
     import os
-    os.environ['MONGO_HOST'] = host
-    os.environ['MONGO_PORT'] = str(port)
-    os.environ['MONGO_USERNAME'] = username
-    os.environ['MONGO_PASSWORD'] = password
-    os.environ['MONGO_DATABASE'] = database
+    os.environ['MONGODB_URL'] = f"mongodb://{username}:{password}@{host}:{port}"
+    os.environ['DATABASE_NAME'] = database
     
     global database_service
     database_service = GlobalDatabaseService().reset_service()
