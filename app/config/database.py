@@ -1,16 +1,22 @@
-# app/config/database.py - Base de Datos Corregida
+# ===== app/config/database.py - VERSIÓN CORREGIDA SIMPLE =====
+"""
+Servicio de base de datos con auto-configuración desde .env + switch manual
+Mantiene funcionalidad original + gestión modular
+"""
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
 
 from app.config.settings import settings, DatabaseConfiguration
+from app.database.module_manager import ModuleManager
 
-# Configurar logging
 logger = logging.getLogger(__name__)
 
+# ===== INTERFACES (SOLID - Interface Segregation Principle) =====
 class IDatabaseConnection(ABC):
-    """Interface para conexiones de base de datos (Interface Segregation)"""
+    """Interface para conexiones de base de datos"""
     
     @abstractmethod
     async def connect(self) -> None:
@@ -28,19 +34,9 @@ class IDatabaseConnection(ABC):
     async def health_check(self) -> bool:
         pass
 
-class IDatabaseManager(ABC):
-    """Interface para gestión de base de datos (Dependency Inversion)"""
-    
-    @abstractmethod
-    async def initialize_indexes(self) -> None:
-        pass
-    
-    @abstractmethod
-    async def create_collections(self) -> None:
-        pass
-
+# ===== CONEXIÓN MONGODB (Igual que tu original) =====
 class MongoDBConnection(IDatabaseConnection):
-    """Implementación para MongoDB con flexibilidad de conexión"""
+    """Implementación MongoDB con flexibilidad de conexión"""
     
     def __init__(self, database_config: DatabaseConfiguration):
         self._config = database_config
@@ -49,7 +45,7 @@ class MongoDBConnection(IDatabaseConnection):
         self._is_connected = False
     
     async def connect(self) -> None:
-        """Conectar a MongoDB con configuración flexible"""
+        """Conectar a MongoDB con configuración optimizada"""
         try:
             connection_url = self._config.connection_url
             
@@ -72,8 +68,8 @@ class MongoDBConnection(IDatabaseConnection):
             # Log del tipo de conexión
             connection_type = settings.get_connection_type()
             logger.info(f"🔗 Conectando a {connection_type}...")
-            logger.info(f"🔗 Host: {self._config.host}")
-            logger.info(f"🔗 Puerto: {self._config.port}")
+            logger.info(f"🔗 Host: {getattr(self._config, 'host', 'N/A')}")
+            logger.info(f"🔗 Puerto: {getattr(self._config, 'port', 'N/A')}")
             logger.info(f"🔗 Base de datos: {self._config.database_name}")
             
             # Crear cliente con opciones optimizadas
@@ -97,8 +93,8 @@ class MongoDBConnection(IDatabaseConnection):
             
         except Exception as e:
             logger.error(f"❌ Error conectando a MongoDB: {e}")
-            logger.error(f"❌ Host: {self._config.host}")
-            logger.error(f"❌ Puerto: {self._config.port}")
+            logger.error(f"❌ Host: {getattr(self._config, 'host', 'N/A')}")
+            logger.error(f"❌ Puerto: {getattr(self._config, 'port', 'N/A')}")
             self._is_connected = False
             raise ConnectionError(f"No se pudo conectar a MongoDB: {e}")
     
@@ -133,239 +129,160 @@ class MongoDBConnection(IDatabaseConnection):
         """Verificar si está conectado"""
         return self._is_connected
 
-class MongoDBIndexManager(IDatabaseManager):
-    """Gestor de índices para AULA X (Single Responsibility)"""
-    
-    def __init__(self, connection: IDatabaseConnection):
-        self._connection = connection
-    
-    async def initialize_indexes(self) -> None:
-        """Crear índices necesarios para AULA X"""
-        try:
-            db = self._connection.get_database()
-            
-            logger.info("📝 Creando índices de AULA X...")
-            
-            # === ÍNDICES PARA USUARIOS ===
-            await db.users.create_index("email", unique=True, name="idx_user_email")
-            await db.users.create_index([("role", 1), ("is_active", 1)], name="idx_user_role_status")
-            await db.users.create_index([("role", 1), ("status", 1)], name="idx_user_role_active")
-            
-            # === ÍNDICES PARA MATERIAS ===
-            await db.subjects.create_index("code", unique=True, name="idx_subject_code")
-            await db.subjects.create_index("teacher_id", name="idx_subject_teacher")
-            await db.subjects.create_index([("academic_year", 1), ("semester", 1)], name="idx_subject_period")
-            await db.subjects.create_index("enrolled_students", name="idx_subject_students")
-            
-            # === ÍNDICES PARA TAREAS ===
-            await db.tasks.create_index("subject_id", name="idx_task_subject")
-            await db.tasks.create_index("teacher_id", name="idx_task_teacher")
-            await db.tasks.create_index("due_date", name="idx_task_due_date")
-            await db.tasks.create_index([("subject_id", 1), ("status", 1)], name="idx_task_subject_status")
-            
-            # === ÍNDICES PARA ENTREGAS DE TAREAS ===
-            await db.task_submissions.create_index(
-                [("task_id", 1), ("student_id", 1)], 
-                unique=True, 
-                name="idx_submission_unique"
-            )
-            await db.task_submissions.create_index("student_id", name="idx_submission_student")
-            await db.task_submissions.create_index("submitted_at", name="idx_submission_date")
-            await db.task_submissions.create_index("status", name="idx_submission_status")
-            
-            # === ÍNDICES PARA EVALUACIONES ===
-            await db.task_evaluations.create_index("submission_id", unique=True, name="idx_evaluation_submission")
-            await db.task_evaluations.create_index("student_id", name="idx_evaluation_student")
-            await db.task_evaluations.create_index("status", name="idx_evaluation_status")
-            
-            # === ÍNDICES PARA CONTENIDOS ===
-            await db.contents.create_index("subject_id", name="idx_content_subject")
-            await db.contents.create_index("teacher_id", name="idx_content_teacher")
-            await db.contents.create_index("content_type", name="idx_content_type")
-            await db.contents.create_index([("subject_id", 1), ("status", 1)], name="idx_content_subject_status")
-            
-            # === ÍNDICES PARA PLANIFICACIÓN ===
-            await db.class_plans.create_index("subject_id", name="idx_class_subject")
-            await db.class_plans.create_index("teacher_id", name="idx_class_teacher")
-            await db.class_plans.create_index("scheduled_date", name="idx_class_date")
-            
-            # === ÍNDICES PARA NOTIFICACIONES ===
-            await db.notifications.create_index("recipient_id", name="idx_notification_recipient")
-            await db.notifications.create_index([("recipient_id", 1), ("is_read", 1)], name="idx_notification_unread")
-            await db.notifications.create_index("created_at", name="idx_notification_date")
-            
-            # Crear TTL para notificaciones expiradas
-            await db.notifications.create_index(
-                "expires_at",
-                expireAfterSeconds=0,
-                name="ttl_notification_expiry",
-                partialFilterExpression={"expires_at": {"$exists": True}}
-            )
-            
-            # === ÍNDICES PARA CHAT ===
-            await db.chat_messages.create_index("subject_id", name="idx_chat_subject")
-            await db.chat_messages.create_index([("subject_id", 1), ("created_at", 1)], name="idx_chat_timeline")
-            await db.chat_messages.create_index("sender_id", name="idx_chat_sender")
-            
-            # === ÍNDICES PARA CALENDARIO ===
-            await db.academic_calendar.create_index("start_date", name="idx_calendar_start")
-            await db.academic_calendar.create_index([("subject_id", 1), ("start_date", 1)], name="idx_calendar_subject")
-            
-            # === ÍNDICES PARA RELACIONES PADRE-ESTUDIANTE ===
-            await db.parent_students.create_index(
-                [("parent_id", 1), ("student_id", 1)], 
-                unique=True, 
-                name="idx_parent_student_unique"
-            )
-            await db.parent_students.create_index("student_id", name="idx_parent_student")
-            
-            # === ÍNDICES DE BÚSQUEDA DE TEXTO ===
-            await db.contents.create_index([
-                ("title", "text"),
-                ("description", "text"),
-                ("tags", "text")
-            ], name="idx_content_search")
-            
-            await db.subjects.create_index([
-                ("name", "text"),
-                ("description", "text"),
-                ("code", "text")
-            ], name="idx_subject_search")
-            
-            await db.users.create_index([
-                ("profile.first_name", "text"),
-                ("profile.last_name", "text"),
-                ("email", "text")
-            ], name="idx_user_search")
-            
-            logger.info("✅ Índices de AULA X creados exitosamente")
-            
-        except Exception as e:
-            logger.error(f"❌ Error creando índices: {e}")
-            raise e
-    
-    async def create_collections(self) -> None:
-        """Crear colecciones con validación de schema para AULA X"""
-        try:
-            db = self._connection.get_database()
-            
-            logger.info("📦 Creando colecciones de AULA X...")
-            
-            # Definir schemas de validación
-            user_schema = {
-                "$jsonSchema": {
-                    "bsonType": "object",
-                    "required": ["email", "password_hash", "role"],
-                    "properties": {
-                        "email": {"bsonType": "string", "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"},
-                        "role": {"enum": ["administrator", "teacher", "student", "parent"]},
-                        "status": {"enum": ["active", "inactive", "pending", "suspended"]},
-                        "password_hash": {"bsonType": "string", "minLength": 8}
-                    }
-                }
-            }
-            
-            subject_schema = {
-                "$jsonSchema": {
-                    "bsonType": "object",
-                    "required": ["name", "code", "teacher_id", "academic_year", "semester"],
-                    "properties": {
-                        "code": {"bsonType": "string", "pattern": "^[A-Z0-9\\-_]+$"},
-                        "academic_year": {"bsonType": "int", "minimum": 2020, "maximum": 2030},
-                        "semester": {"bsonType": "int", "minimum": 1, "maximum": 2},
-                        "max_students": {"bsonType": "int", "minimum": 1, "maximum": 100}
-                    }
-                }
-            }
-            
-            task_schema = {
-                "$jsonSchema": {
-                    "bsonType": "object",
-                    "required": ["title", "subject_id", "teacher_id", "due_date"],
-                    "properties": {
-                        "status": {"enum": ["draft", "published", "closed", "archived"]},
-                        "task_type": {"enum": ["assignment", "essay", "exam", "project", "quiz"]},
-                        "max_points": {"bsonType": "number", "minimum": 0, "maximum": 100}
-                    }
-                }
-            }
-            
-            # Crear colecciones con validación
-            collections_config = {
-                "users": user_schema,
-                "subjects": subject_schema,
-                "tasks": task_schema,
-                "task_submissions": {},
-                "task_evaluations": {},
-                "contents": {},
-                "class_plans": {},
-                "notifications": {},
-                "chat_messages": {},
-                "academic_calendar": {},
-                "parent_students": {},
-                "content_categories": {}
-            }
-            
-            existing_collections = await db.list_collection_names()
-            
-            for collection_name, schema in collections_config.items():
-                if collection_name not in existing_collections:
-                    if schema:
-                        await db.create_collection(collection_name, validator=schema)
-                        logger.info(f"✅ Colección '{collection_name}' creada con validación")
-                    else:
-                        await db.create_collection(collection_name)
-                        logger.info(f"✅ Colección '{collection_name}' creada")
-                else:
-                    logger.info(f"📦 Colección '{collection_name}' ya existe")
-            
-        except Exception as e:
-            logger.error(f"❌ Error creando colecciones: {e}")
-            raise e
-
+# ===== FACTORY PATTERN SIMPLE =====
 class DatabaseFactory:
-    """Factory para crear instancias de base de datos (Factory Pattern)"""
+    """Factory para crear instancias de base de datos"""
     
     @staticmethod
-    def create_mongodb_connection() -> IDatabaseConnection:
-        """Crear conexión MongoDB con configuración flexible"""
-        db_config = settings.get_database_config()
-        return MongoDBConnection(db_config)
-    
-    @staticmethod
-    def create_database_manager(connection: IDatabaseConnection) -> IDatabaseManager:
-        """Crear gestor de base de datos"""
-        return MongoDBIndexManager(connection)
+    def create_mongodb_connection(config: Optional[DatabaseConfiguration] = None) -> IDatabaseConnection:
+        """Crear conexión MongoDB con configuración"""
+        if config is None:
+            config = settings.get_database_config()
+        return MongoDBConnection(config)
 
-class DatabaseService:
-    """Servicio principal de base de datos (Facade Pattern)"""
+# ===== SERVICIO PRINCIPAL HÍBRIDO =====
+class OptimizedDatabaseService:
+    """
+    Servicio de base de datos optimizado con:
+    1. Auto-configuración desde .env al inicializar
+    2. Switch manual cuando se necesite
+    3. Gestión modular
+    """
     
     def __init__(self):
         self._connection: Optional[IDatabaseConnection] = None
-        self._manager: Optional[IDatabaseManager] = None
+        self._module_manager: Optional[ModuleManager] = None
+        
+        # 🎯 CONFIGURACIÓN SIMPLE DE MÓDULOS
+        self._active_modules = [
+            "auth",      # ← Siempre activo (requerido)
+            #"academic"   # ← Agrega más aquí cuando los necesites
+            # "tasks",
+            # "content", 
+            # "communication",
+            # "gamification",
+            # "analytics"
+        ]
     
     async def initialize(self) -> None:
-        """Inicializar servicio de base de datos"""
-        logger.info("🚀 Inicializando servicio de base de datos...")
+        """
+        Inicializar servicio con auto-configuración desde .env
+        Template Method Pattern
+        """
+        logger.info("🚀 Inicializando servicio de base de datos optimizado...")
         
-        self._connection = DatabaseFactory.create_mongodb_connection()
-        self._manager = DatabaseFactory.create_database_manager(self._connection)
+        # 1. Auto-configurar desde .env
+        await self._auto_configure_from_env()
         
-        await self._connection.connect()
-        await self._manager.create_collections()
-        await self._manager.initialize_indexes()
+        # 2. Inicializar gestor de módulos
+        self._module_manager = ModuleManager(
+            database=self._connection.get_database(),
+            active_modules=self._active_modules
+        )
         
-        # Crear datos iniciales si es necesario
+        # 3. Configurar módulos activos
+        await self._module_manager.setup_modules()
+        
+        # 4. Datos iniciales
         await self._create_initial_data()
         
-        logger.info("🎉 Servicio de base de datos inicializado correctamente")
+        logger.info("🎉 Servicio optimizado inicializado correctamente")
+        logger.info(f"📦 Módulos activos: {', '.join(self._active_modules)}")
+    
+    async def _auto_configure_from_env(self) -> None:
+        """
+        🆕 AUTO-CONFIGURACIÓN DESDE .env
+        FUNCIONA CON TU .env ACTUAL usando MONGODB_URL
+        """
+        try:
+            # Usar tu MONGODB_URL directamente
+            mongodb_url = getattr(settings, 'MONGODB_URL', '')
+            database_name = getattr(settings, 'DATABASE_NAME', 'aula_x')
+            
+            if not mongodb_url:
+                logger.error("❌ MONGODB_URL no encontrada en .env")
+                raise ConnectionError("MONGODB_URL requerida en .env")
+            
+            # Detectar tipo de conexión automáticamente desde la URL
+            connection_type = self._detect_connection_type_from_url(mongodb_url)
+            logger.info(f"🔧 Auto-configurando desde .env: {connection_type}")
+            
+            # Crear configuración usando tu MONGODB_URL
+            config = DatabaseConfiguration(mongodb_url, database_name)
+            
+            # Conectar
+            self._connection = DatabaseFactory.create_mongodb_connection(config)
+            await self._connection.connect()
+            
+            logger.info(f"✅ Auto-configuración exitosa usando: {connection_type}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error en auto-configuración: {e}")
+            raise e
+    
+    def _detect_connection_type_from_url(self, mongodb_url: str) -> str:
+        """Detectar tipo de conexión desde la URL"""
+        if "mongodb+srv://" in mongodb_url:
+            return "MongoDB Atlas"
+        elif "@" in mongodb_url and "localhost" not in mongodb_url:
+            return "MongoDB Docker/Remote"
+        else:
+            return "MongoDB Local"
+    
+    # ===== MÉTODOS PARA CAMBIAR URL COMPLETA (NUEVO) =====
+    async def switch_to_url(self, mongodb_url: str, database_name: str = "aula_x") -> bool:
+        """
+        🆕 Cambiar usando URL completa (como tu .env)
+        Útil para cambiar rápidamente entre las URLs comentadas en tu .env
+        """
+        try:
+            connection_type = self._detect_connection_type_from_url(mongodb_url)
+            logger.info(f"🔄 Switch usando URL completa a: {connection_type}")
+            
+            # Cerrar conexión actual
+            if self._connection:
+                await self._connection.disconnect()
+            
+            # Crear nueva configuración
+            new_config = DatabaseConfiguration(mongodb_url, database_name)
+            
+            # Crear nueva conexión
+            self._connection = DatabaseFactory.create_mongodb_connection(new_config)
+            await self._connection.connect()
+            
+            # Reconfigurar módulos después del switch
+            if self._module_manager:
+                await self._reconfigure_modules_after_switch()
+            
+            logger.info(f"✅ Switch completado a: {connection_type}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error en switch con URL: {e}")
+            return False
+    
+    # ===== MÉTODOS DE SWITCH SIMPLIFICADOS PARA TU .env =====
+    #async def switch_to_atlas_env(self) -> bool:
+        """Cambiar a Atlas usando la URL de tu .env"""
+        atlas_url = "mongodb+srv://francoasevey:2kDokCGxhxXoFqRl@francocluster.cw9qc37.mongodb.net/aula_x"
+        return await self.switch_to_url(atlas_url)
+    
+    #async def switch_to_local_env(self) -> bool:
+        """Cambiar a Local usando la URL de tu .env"""
+        local_url = "mongodb://localhost:27017/aula_x"
+        return await self.switch_to_url(local_url)
+    
+    #async def switch_to_docker_env(self) -> bool:
+        """Cambiar a Docker usando la URL de tu .env"""
+        docker_url = "mongodb://admin:admin123@localhost:27017/aula_x"
+        return await self.switch_to_url(docker_url)
     
     async def _create_initial_data(self) -> None:
-        """Crear datos iniciales si no existen"""
+        """Crear datos iniciales solo si es necesario"""
         try:
             db = self.get_database()
             
-            # Verificar si ya existe un administrador
+            # Verificar admin
             admin_count = await db.users.count_documents({"role": "administrator"})
             
             if admin_count == 0:
@@ -373,83 +290,30 @@ class DatabaseService:
                 
                 admin_user = {
                     "email": "admin@aulax.com",
-                    "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPu8VDjL8QOrS",  # admin123
+                    "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPu8VDjL8QOrS",
                     "role": "administrator",
                     "status": "active",
                     "profile": {
                         "first_name": "Administrador",
                         "last_name": "Sistema",
-                        "phone": None,
-                        "avatar_url": None,
-                        "bio": "Usuario administrador del sistema"
+                        "bio": "Usuario administrador del sistema AULA X"
                     },
                     "email_verified": True,
-                    "created_at": {"$date": "2024-01-01T00:00:00.000Z"},
-                    "updated_at": {"$date": "2024-01-01T00:00:00.000Z"},
                     "is_active": True
                 }
                 
                 await db.users.insert_one(admin_user)
-                logger.info("✅ Usuario administrador creado: admin@aulax.com / admin123")
+                logger.info("✅ Admin creado: admin@aulax.com / admin123")
         
         except Exception as e:
             logger.error(f"❌ Error creando datos iniciales: {e}")
     
-    async def shutdown(self) -> None:
-        """Cerrar servicio de base de datos"""
-        if self._connection:
-            await self._connection.disconnect()
-    
-    def get_database(self) -> AsyncIOMotorDatabase:
-        """Obtener instancia de base de datos"""
-        if not self._connection:
-            raise RuntimeError("Servicio de base de datos no inicializado")
-        return self._connection.get_database()
-    
-    async def health_check(self) -> Dict[str, Any]:
-        """Verificar salud del servicio con información detallada"""
-        if not self._connection:
-            return {
-                "status": "disconnected", 
-                "healthy": False,
-                "connection_type": "none",
-                "database": None
-            }
-        
-        is_healthy = await self._connection.health_check()
-        
-        # Obtener estadísticas de la base de datos
-        stats = {}
-        try:
-            if is_healthy:
-                db = self.get_database()
-                db_stats = await db.command("dbStats")
-                collection_names = await db.list_collection_names()
-                
-                stats = {
-                    "collections": len(collection_names),
-                    "collection_names": collection_names,
-                    "data_size": db_stats.get("dataSize", 0),
-                    "storage_size": db_stats.get("storageSize", 0),
-                    "indexes": db_stats.get("indexes", 0)
-                }
-        except Exception as e:
-            logger.warning(f"⚠️ No se pudieron obtener estadísticas de BD: {e}")
-        
-        return {
-            "status": "connected" if is_healthy else "error",
-            "healthy": is_healthy,
-            "connection_type": settings.get_connection_type(),
-            "database": settings.get_database_config().database_name,
-            "host": settings.MONGO_HOST,
-            "port": settings.MONGO_PORT,
-            "stats": stats
-        }
-    
-    # Métodos para cambio dinámico de conexión
+    # ===== MÉTODOS DE SWITCH MANUAL (TU FUNCIONALIDAD ORIGINAL) =====
     async def switch_to_atlas(self, cluster_url: str, username: str, password: str, database: str = "aula_x") -> bool:
-        """Cambiar a conexión Atlas"""
+        """Cambiar a conexión Atlas manualmente"""
         try:
+            logger.info(f"🔄 Switch manual a Atlas: {cluster_url}")
+            
             # Cerrar conexión actual
             if self._connection:
                 await self._connection.disconnect()
@@ -459,11 +323,14 @@ class DatabaseService:
             new_config = DatabaseConfiguration(new_url, database)
             
             # Crear nueva conexión
-            self._connection = MongoDBConnection(new_config)
-            self._manager = DatabaseFactory.create_database_manager(self._connection)
-            
-            # Conectar y verificar
+            self._connection = DatabaseFactory.create_mongodb_connection(new_config)
             await self._connection.connect()
+            
+            # 🆕 RECONFIGURAR MÓDULOS después del switch
+            if self._module_manager:
+                await self._reconfigure_modules_after_switch()
+            
+            logger.info("✅ Switch a Atlas completado exitosamente")
             return True
             
         except Exception as e:
@@ -471,8 +338,10 @@ class DatabaseService:
             return False
     
     async def switch_to_local(self, host: str = "localhost", port: int = 27017, database: str = "aula_x") -> bool:
-        """Cambiar a conexión local"""
+        """Cambiar a conexión local manualmente"""
         try:
+            logger.info(f"🔄 Switch manual a Local: {host}:{port}")
+            
             # Cerrar conexión actual
             if self._connection:
                 await self._connection.disconnect()
@@ -482,11 +351,14 @@ class DatabaseService:
             new_config = DatabaseConfiguration(new_url, database)
             
             # Crear nueva conexión
-            self._connection = MongoDBConnection(new_config)
-            self._manager = DatabaseFactory.create_database_manager(self._connection)
-            
-            # Conectar y verificar
+            self._connection = DatabaseFactory.create_mongodb_connection(new_config)
             await self._connection.connect()
+            
+            # 🆕 RECONFIGURAR MÓDULOS después del switch
+            if self._module_manager:
+                await self._reconfigure_modules_after_switch()
+            
+            logger.info("✅ Switch a Local completado exitosamente")
             return True
             
         except Exception as e:
@@ -496,8 +368,10 @@ class DatabaseService:
     async def switch_to_docker(self, host: str = "localhost", port: int = 27017, 
                              username: str = "admin", password: str = "admin123", 
                              database: str = "aula_x") -> bool:
-        """Cambiar a conexión Docker"""
+        """Cambiar a conexión Docker manualmente"""
         try:
+            logger.info(f"🔄 Switch manual a Docker: {host}:{port}")
+            
             # Cerrar conexión actual
             if self._connection:
                 await self._connection.disconnect()
@@ -507,18 +381,233 @@ class DatabaseService:
             new_config = DatabaseConfiguration(new_url, database)
             
             # Crear nueva conexión
-            self._connection = MongoDBConnection(new_config)
-            self._manager = DatabaseFactory.create_database_manager(self._connection)
-            
-            # Conectar y verificar
+            self._connection = DatabaseFactory.create_mongodb_connection(new_config)
             await self._connection.connect()
+            
+            # 🆕 RECONFIGURAR MÓDULOS después del switch
+            if self._module_manager:
+                await self._reconfigure_modules_after_switch()
+            
+            logger.info("✅ Switch a Docker completado exitosamente")
             return True
             
         except Exception as e:
             logger.error(f"❌ Error cambiando a Docker: {e}")
             return False
+    
+    async def _reconfigure_modules_after_switch(self) -> None:
+        """🆕 Reconfigurar módulos después de switch de conexión"""
+        try:
+            logger.info("🔄 Reconfigurando módulos después del switch...")
+            
+            # Actualizar referencia de base de datos en ModuleManager
+            new_database = self._connection.get_database()
+            await self._module_manager.reconfigure_database(new_database)
+            
+            # Reinicializar módulos activos
+            await self._module_manager.reinitialize_modules()
+            
+            logger.info("✅ Módulos reconfigurados después del switch")
+            
+        except Exception as e:
+            logger.error(f"❌ Error reconfigurando módulos: {e}")
+            # No hacer raise aquí para no fallar el switch completo
+    
+    # ===== MÉTODOS DE GESTIÓN MODULAR =====
+    async def add_module(self, module_name: str) -> bool:
+        """Agregar módulo dinámicamente"""
+        try:
+            if module_name not in self._active_modules:
+                self._active_modules.append(module_name)
+                
+                if self._module_manager:
+                    await self._module_manager.add_module(module_name)
+                
+                logger.info(f"✅ Módulo '{module_name}' agregado exitosamente")
+                return True
+            else:
+                logger.warning(f"⚠️ Módulo '{module_name}' ya está activo")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error agregando módulo '{module_name}': {e}")
+            return False
+    
+    async def remove_module(self, module_name: str) -> bool:
+        """Remover módulo (conserva datos)"""
+        try:
+            if module_name == "auth":
+                logger.error("❌ No se puede remover el módulo 'auth' (requerido)")
+                return False
+            
+            if module_name in self._active_modules:
+                self._active_modules.remove(module_name)
+                
+                if self._module_manager:
+                    await self._module_manager.remove_module(module_name)
+                
+                logger.info(f"✅ Módulo '{module_name}' removido")
+                return True
+            else:
+                logger.warning(f"⚠️ Módulo '{module_name}' no está activo")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error removiendo módulo '{module_name}': {e}")
+            return False
+    
+    def get_active_modules(self) -> List[str]:
+        """Obtener módulos activos"""
+        return self._active_modules.copy()
+    
+    async def get_module_status(self) -> Dict[str, Any]:
+        """Obtener estado detallado de módulos"""
+        if not self._module_manager:
+            return {"error": "Module manager no inicializado"}
+        
+        return await self._module_manager.get_status()
+    
+    # ===== MÉTODOS DE SERVICIO =====
+    async def shutdown(self) -> None:
+        """Shutdown graceful del servicio"""
+        logger.info("🔄 Iniciando shutdown del servicio...")
+        
+        try:
+            if self._module_manager:
+                # Cleanup de módulos
+                for module_name in self._active_modules.copy():
+                    if module_name != "auth":  # Mantener auth hasta el final
+                        await self.remove_module(module_name)
+            
+            if self._connection:
+                await self._connection.disconnect()
+            
+            logger.info("✅ Shutdown completado")
+            
+        except Exception as e:
+            logger.error(f"❌ Error en shutdown: {e}")
+    
+    def get_database(self) -> AsyncIOMotorDatabase:
+        """Obtener instancia de base de datos"""
+        if not self._connection:
+            raise RuntimeError("Servicio de base de datos no inicializado")
+        return self._connection.get_database()
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Health check completo con información detallada"""
+        base_status = {
+            "healthy": False,
+            "active_modules": self._active_modules,
+        }
+        
+        if not self._connection:
+            base_status.update({
+                "status": "disconnected",
+                "error": "No connection available"
+            })
+            return base_status
+        
+        try:
+            is_healthy = await self._connection.health_check()
+            base_status["healthy"] = is_healthy
+            
+            if is_healthy:
+                db = self.get_database()
+                db_stats = await db.command("dbStats")
+                collection_names = await db.list_collection_names()
+                
+                base_status.update({
+                    "status": "connected",
+                    "connection_type": settings.get_connection_type(),
+                    "database": settings.get_database_config().database_name,
+                    "stats": {
+                        "collections": len(collection_names),
+                        "collection_names": collection_names,
+                        "data_size": db_stats.get("dataSize", 0),
+                        "storage_size": db_stats.get("storageSize", 0),
+                        "indexes": db_stats.get("indexes", 0)
+                    }
+                })
+                
+                # Agregar estado de módulos si está disponible
+                if self._module_manager:
+                    module_status = await self._module_manager.get_status()
+                    base_status["module_status"] = module_status
+            else:
+                base_status.update({
+                    "status": "error",
+                    "error": "Health check failed"
+                })
+        
+        except Exception as e:
+            logger.warning(f"⚠️ Error en health check: {e}")
+            base_status.update({
+                "status": "error", 
+                "error": str(e),
+                "healthy": False
+            })
+        
+        return base_status
+    
+    # ===== MÉTODO PARA RECARGAR CONFIGURACIÓN =====
+    async def reload_from_env(self) -> bool:
+        """
+        🆕 Recargar configuración desde .env sin reiniciar la aplicación
+        FUNCIONA CON TU .env ACTUAL
+        """
+        try:
+            logger.info("🔄 Recargando configuración desde .env...")
+            
+            # Reimportar settings para obtener nuevos valores
+            import importlib
+            from app.config import settings as settings_module
+            importlib.reload(settings_module)
+            
+            # Reconectar usando MONGODB_URL actualizada
+            await self._auto_configure_from_env()
+            
+            # Reconfigurar módulos
+            if self._module_manager:
+                await self._reconfigure_modules_after_switch()
+            
+            logger.info("✅ Configuración recargada exitosamente")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error recargando configuración: {e}")
+            return False
 
-# Singleton para el servicio de base de datos
+# ===== EJEMPLO DE USO ACTUALIZADO =====
+"""
+🚀 FUNCIONA PERFECTO CON TU .env:
+
+1. INICIALIZACIÓN AUTOMÁTICA:
+   await database_service.initialize()  # Usa tu MONGODB_URL automáticamente
+
+2. CAMBIAR SOLO EDITANDO .env:
+   - Cambia la línea MONGODB_URL en tu .env
+   - Descomenta la URL que quieres usar
+   - Llama: await database_service.reload_from_env()
+
+3. SWITCH PROGRAMÁTICO RÁPIDO:
+   await database_service.switch_to_atlas_env()   # Usa tu URL de Atlas
+   await database_service.switch_to_local_env()   # Usa tu URL Local
+   await database_service.switch_to_docker_env()  # Usa tu URL Docker
+   
+4. SWITCH CON URL PERSONALIZADA:
+   await database_service.switch_to_url("mongodb://custom:url@host:port/db")
+
+5. TU FUNCIONALIDAD ORIGINAL SIGUE FUNCIONANDO:
+   await database_service.switch_to_atlas("cluster", "user", "pass")
+   await database_service.switch_to_local("localhost", 27017)
+   await database_service.switch_to_docker("localhost", 27017, "admin", "admin123")
+
+✅ FLUJO SIMPLE QUE QUERÍAS:
+1. Cambias MONGODB_URL en .env (descomenta la línea que quieres)
+2. Opción A: Reinicias aplicación (auto-configuración)
+3. Opción B: Llamas reload_from_env() (sin reiniciar)
+4. ¡Listo! Conectado a la nueva base de datos
+"""
+
+# ===== SINGLETON PATTERN =====
 class GlobalDatabaseService:
     """Singleton para servicio global de base de datos"""
     
@@ -530,21 +619,50 @@ class GlobalDatabaseService:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def get_service(self) -> DatabaseService:
+    def get_service(self) -> OptimizedDatabaseService:
         """Obtener servicio de base de datos"""
         if self._service is None:
-            self._service = DatabaseService()
+            self._service = OptimizedDatabaseService()
         return self._service
     
-    def reset_service(self) -> DatabaseService:
-        """Resetear servicio (útil para cambios de configuración)"""
-        self._service = DatabaseService()
+    def reset_service(self) -> OptimizedDatabaseService:
+        """Resetear servicio (útil para testing)"""
+        self._service = OptimizedDatabaseService()
         return self._service
 
-# Instancia global
+# ===== INSTANCIAS GLOBALES =====
+# Singleton instance
 database_service = GlobalDatabaseService().get_service()
 
-# Función de conveniencia para obtener base de datos
+# Función de conveniencia para Dependency Injection
 async def get_database() -> AsyncIOMotorDatabase:
     """Función helper para obtener base de datos (Dependency Injection)"""
     return database_service.get_database()
+
+# Función para obtener servicio completo
+def get_database_service() -> OptimizedDatabaseService:
+    """Obtener servicio completo para operaciones avanzadas"""
+    return database_service
+
+# ===== EJEMPLO DE USO =====
+"""
+🚀 INICIALIZACIÓN AUTOMÁTICA DESDE .env:
+await database_service.initialize()  # Lee DB_TYPE del .env y conecta automáticamente
+
+🔄 SWITCH MANUAL (tu funcionalidad original):
+await database_service.switch_to_atlas("cluster0.abc123.mongodb.net", "user", "pass")
+await database_service.switch_to_local("localhost", 27017)
+await database_service.switch_to_docker("localhost", 27017, "admin", "admin123")
+
+🆕 RECARGAR DESDE .env SIN REINICIAR:
+await database_service.reload_from_env()  # Útil para cambios en producción
+
+📦 GESTIÓN DE MÓDULOS:
+await database_service.add_module("tasks")
+await database_service.remove_module("content")
+modules = database_service.get_active_modules()
+
+📊 MONITOREO:
+health = await database_service.health_check()
+module_status = await database_service.get_module_status()
+"""
